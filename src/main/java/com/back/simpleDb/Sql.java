@@ -2,12 +2,10 @@ package com.back.simpleDb;
 
 import lombok.RequiredArgsConstructor;
 
+import java.lang.reflect.Field;
 import java.sql.*;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RequiredArgsConstructor
 public class Sql {
@@ -28,6 +26,25 @@ public class Sql {
         }
         return this;
     }
+
+    public Sql appendIn(String sql, Object... args) {
+
+        //Collections.nCopies(int n, T obj) → obj를 n번 반복한 불변 리스트 반환
+        // args 개수만큼 placeholder(?) 생성
+        String placeholder = String.join(",", Collections.nCopies(args.length, "?"));
+
+        String changedSql = sql.replace("?", placeholder);
+
+        sqlBuilder.append(" ").append(changedSql);
+
+        for (Object arg : args) {
+            params.add(arg);
+        }
+
+        return this;
+
+    }
+
 
     //params 리스트에 있는 값들을 SQL의 플레이스홀더(?)에 순서대로 바인딩 -> 바인딩 완료된 PreparedStatement 반환
     private PreparedStatement buildPreparedStatement(PreparedStatement ps) throws SQLException {
@@ -142,6 +159,47 @@ public class Sql {
         }
     }
 
+    public <T> List<T> selectRows(Class<T> clazz) {
+        List<Map<String, Object>> rows = selectRows();
+        return rows.stream()
+                .map(row -> mapToObj(row, clazz))
+                .toList();
+    }
+
+    //
+    private <T> T mapToObj(Map<String, Object> row, Class<T> clazz) {
+        try {
+            //Article 객체 생성
+            T obj = clazz.getDeclaredConstructor().newInstance();
+            //= new Article()
+
+            //Map의 키-값을 field에 주입
+            row.forEach((key, val) -> {
+
+                try {
+                    Field field = clazz.getDeclaredField(key);
+                    field.setAccessible(true);  // private 접근 허용
+                    field.set(obj, val);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+
+            });
+            return obj;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+    }
+    public <T> T selectRow(Class<T> clazz) {
+        List<T> rows = selectRows(clazz);
+
+        if (rows.isEmpty()) return null;
+
+        return rows.get(0); // 첫번째 행만 반환
+    }
+
+
     public Map<String, Object> selectRow() {
         List<Map<String, Object>> rows = selectRows();
         return rows.isEmpty() ? null : rows.get(0);
@@ -183,7 +241,7 @@ public class Sql {
 //    }
 
 
-    private <T> T selectSingle(SqlResultMapper<T> mapper){
+    private <T> T selectSingle(SqlResultMapper<T> mapper) {
         String sql = sqlBuilder.toString().trim();
         printLog(sql);
 
@@ -199,6 +257,25 @@ public class Sql {
         }
         return null;
 
+    }
+
+    private <T> List<T> selectList(SqlResultMapper<T> mapper) {
+        String sql = sqlBuilder.toString().trim();
+        printLog(sql);
+
+        try (PreparedStatement ps = buildPreparedStatement(
+                simpleDb.getConnection().prepareStatement(sql));
+             ResultSet rs = ps.executeQuery()) {
+
+            List<T> results = new ArrayList<>();
+            while (rs.next()) {
+                results.add(mapper.map(rs));
+            }
+            return results;
+
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @FunctionalInterface
@@ -222,4 +299,8 @@ public class Sql {
         return selectSingle(rs -> rs.getTimestamp(1).toLocalDateTime());
     }
 
+
+    public List<Long> selectLongs() {
+        return selectList(rs -> rs.getLong(1));
+    }
 }

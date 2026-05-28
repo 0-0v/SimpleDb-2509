@@ -73,4 +73,32 @@ public class SimpleDb {
     public Sql genSql(){
         return new Sql(this);
     }
+
+    public void startTransaction() {
+        try{
+            getConnection().setAutoCommit(false);   //자동 커밋 끄기
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void rollback() {
+        try{
+            Connection conn = getConnection();
+            conn.rollback();
+            conn.setAutoCommit(true); // 자동 커밋 다시 켜기
+        }catch (Exception e){
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void commit() {
+        try {
+            Connection conn = getConnection();
+            conn.commit();
+            conn.setAutoCommit(true); // 자동 커밋 다시 켜기
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }
